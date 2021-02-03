@@ -7,41 +7,48 @@ on:
     branches: [ main ]
 
 jobs:
-  laravel-update:
+  upload-hosting:
     
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
-      - name: Update Composer
-        run: composer install
-        
-  laravel-tests:
+      - uses: actions/checkout@v2.1.0
+        with:
+          fetch-depth: 2
 
-    runs-on: ubuntu-latest
+      - name: Create env file
+        run: |
+                touch .env
+                echo APP_NAME=MyAppName >> .env
+                echo APP_ENV=production >> .env
+                echo APP_DEBUG=false >> .env
+                echo LOG_CHANNEL=daily >> .env
+                echo DB_DATABASE=${{ secrets.DEV_DB_DATABASE }} >> .env
+                echo DB_USERNAME=${{ secrets.DEV_DB_USERNAME }} >> .env
+                echo DB_PASSWORD=${{ secrets.DEV_DB_PASSWORD }} >> .env
+                echo "!.env" > .git-ftp-include
 
-    steps:
-    - uses: shivammathur/setup-php@b7d1d9c9a92d8d8463ce36d7f60da34d461724f8
-      with:
-        php-version: '8.0'
- 
-       
-    - uses: actions/checkout@v2
-    - name: update composer
-      run: composer update
-    - name: Copy .env
-      run: php -r "file_exists('.env') || copy('.env.example', '.env');"
-    - name: Install Dependencies
-      run: composer install -q --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
-    - name: Generate key
-      run: php artisan key:generate
-    - name: Directory Permissions
-      run: chmod -R 777 storage bootstrap/cache
-    - name: Create Database
-      run: |
-        mkdir -p database
-        touch database/database.mysql
-    - name: Execute tests (Unit and Feature tests) via PHPUnit
-      env:
-        DB_CONNECTION: mysql
-        DB_DATABASE: database/database.mysql
-      run: vendor/bin/phpunit
+      - name: Cache dependencies
+        uses: actions/cache@v1
+        with:
+              path: ~/.composer/cache/files
+              key: dependencies-composer-${{ hashFiles('composer.json') }}
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+              php-version: 7.3
+              extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite
+              coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-interaction --no-suggest
+
+      - name: Adding Vendor
+        run: echo "!vendor/" > .git-ftp-include
+
+      - name: FTP Deploy Action
+        uses: SamKirkland/FTP-Deploy-Action@3.1.1
+        with:
+          ftp-server: ftp://${{ secrets.DEV_FTP_SERVER }}
+          ftp-username: ${{ secrets.DEV_FTP_USERNAME }}
+          ftp-password: ${{ secrets.DEV_FTP_PASSWORD }}
